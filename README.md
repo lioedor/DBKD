@@ -1,20 +1,29 @@
 # DBKD
 ## Dataset
-* [MIMIC-III](https://mimic.mit.edu/): The database comprises detailed clinical information regarding >60 000 stays in ICUs at the Beth Israel Deaconess Medical Center in Boston between 2001 - 2012. MIMIC Code Repository: https://github.com/MIT-LCP/mimic-code.
+* [MIMIC-III](https://mimic.mit.edu/): The database comprises detailed clinical information regarding >60 000 stays in ICUs at the Beth Israel Deaconess Medical Center in Boston between 2001 - 2012. MIMIC Code Repository can be obtained from: https://github.com/MIT-LCP/mimic-code.
 * BHF dataset: 4,899 Chinese EMRs from Beijing Friendship Hospital between January 2020 and January 2022. The BHF dataset will be made available from the corresponding author by request.
 
 ## Requirement
-* Python==3.6
-* Pytorch==0.4.1
-* CUDA==9.0
-* Scikit-learn==0.23.2
-* Numpy==1.16.5
-* Scipy==1.3.1
-* Pandas==0.23.4
-* Matplotlib==3.3.2
+* Python
+* Pytorch
+* CUDA
+* Scikit-learn
+* Numpy
+* Scipy
+* Pandas
+* Matplotlib
+* nltk
+* wget
+* gensim
+* requests
+* tqdm
+* transformers
+* BeautifulSoup
+* tensorboardX
+* yaml
 
 ## Baselines
-* [CAML](https://github.com/jamesmullenbach/caml-mimic)
+* [CAML&DRCAML](https://github.com/jamesmullenbach/caml-mimic)
 * [HyperCore](https://aclanthology.org/2020.acl-main.282/)
 * [MultiResCNN](https://github.com/foxlf823/Multi-Filter-Residual-Convolutional-Neural-Network)
 * [MSATT-KG](https://dl.acm.org/doi/abs/10.1145/3357384.3357897)
@@ -22,3 +31,62 @@
 
 ## Data usage
 Put the files of MIMIC III into the 'data' dir as below:
+```
+ori_mimic3_data
+├── D_ICD_DIAGNOSES.csv
+├── D_ICD_PROCEDURES.csv
+├── ICD9_descriptions
+├── ICD9_descriptions copy
+└── mimic3
+    ├── DIAGNOSES_ICD.csv
+    ├── NOTEEVENTS.csv
+    ├── PROCEDURES_ICD.csv
+    ├── dev_50_hadm_ids.csv
+    ├── dev_full_hadm_ids.csv
+    ├── test_50_hadm_ids.csv
+    ├── test_full_hadm_ids.csv
+    ├── train_50_hadm_ids.csv
+    └── train_full_hadm_ids.csv
+```
+
+```
+processed_data
+├── c2ind.npy
+├── codes_filled.json
+├── comatrix.npy
+├── description_vectors.vocab
+├── description_words.vocab
+├── dev_*.csv
+├── disch_dev_split.csv
+├── disch_full.csv
+├── disch_test_split.csv
+├── disch_train_split.csv
+├── hier_level_idx.npy
+├── hmidx.npy
+├── ind2c.npy
+├── label_embeddings.pth
+├── label_hierarchy.csv
+├── notes_labeled.csv
+├── processed_full.embed
+├── processed_full.w2v
+├── test_*.csv
+├── train_*.csv
+└── vocab.csv
+```
+## Experiments procedure
+## Citation
+If you found this work useful for you, please consider citing it.
+```
+@article{DBKD,
+  title   = {DBKD},
+  author  = {###},
+  journal = {####},
+  year    = {####}
+}
+```
+## Contact
+For any issues/questions regarding the paper or reproducing the results, please contact any of the following.
+
+##: ###
+
+Department of Biomedical Engineering, Beihang University, 37 Xueyuan Road, Beijing, 100853

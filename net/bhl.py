@@ -79,8 +79,8 @@ class BHLLoss(nn.Module):
         com_norm = F.normalize(self.comatrix, p=2, dim=1)
         cos_sim = torch.matmul(p_norm, com_norm)
         d = 1 - cos_sim
-        rol = torch.sigmoid(p)
-        reg = torch.mean(d * rol, dim=1)
+        
+        reg = torch.mean(d * p_norm, dim=1)
 
         batch_loss = (1 - self.lamda) * (L_down + L_up) + self.lamda * reg
         return batch_loss.mean()

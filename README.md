@@ -29,6 +29,9 @@
 * [MSATT-KG](https://dl.acm.org/doi/abs/10.1145/3357384.3357897)
 * [JAN](https://ieeexplore.ieee.org/document/9822203)
 
+## Label knowledge acquirement
+We crawled the ICD description and hierarchy information from [ICD9 website](http://www.icd9data.com/). After adding the parent label, the number of label for training, development, and testing are 1,0051, 3,928, 5,111, respectively.
+
 ## Data usage
 Put the files of MIMIC III into the 'data' dir as below:
 ```

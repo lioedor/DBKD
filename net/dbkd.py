@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import numpy as np
 from torch import nn
 
 from .clb import ClassifierBranch
@@ -8,62 +9,82 @@ from .stud import MainBranch
 from .bhl import BHLLoss
 
 
-def logits_distillation_loss(student_logits, teacher_logits, temperature):
-    T = temperature
-    student_prob = nn.functional.sigmoid(student_logits / T)
-    teacher_prob = nn.functional.sigmoid(teacher_logits / T)
-
-    # KL 散度损失（使用二进制交叉熵计算）
-    kl_loss = nn.functional.binary_cross_entropy(
-        student_prob, teacher_prob, reduction="none"
-    )
-    kl_loss = kl_loss.mean(dim=1).sum() * (T * T)
-
-    return kl_loss
-
+def logits_distillation_loss(student_logits, teacher_logits, temperature: float):
+    T = float(temperature)
+    with torch.no_grad():
+        t_prob = torch.sigmoid(teacher_logits / T) 
+    kd = F.binary_cross_entropy_with_logits(
+        student_logits / T, t_prob, reduction="mean" 
+    ) * (T * T)
+    return kd
 
 def feat_distillation_loss(student_feat, teacher_feat):
-    s_norm = F.normalize(student_feat, p=2, dim=1)
-    t_norm = F.normalize(teacher_feat, p=2, dim=1)
-    cos_sim = s_norm * t_norm
-    l = 1 - cos_sim
+    s = F.normalize(student_feat, p=2, dim=1)
+    t = F.normalize(teacher_feat, p=2, dim=1)
+    cos = (s * t).sum(dim=1)
+    return (1.0 - cos).mean()
 
-    return torch.mean(l, dim=1).sum()
+def load_pos_weight(path, device, num_labels: int | None = None) -> torch.Tensor:
+    w = np.load(path, allow_pickle=True)
+    if w.ndim != 1:
+        w = w.reshape(-1)
+    w = w.astype(np.float32, copy=False)
+    return torch.from_numpy(w).to(device)
 
 
 class DBKBFramework(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
+        device = config["device"]
         self._join_train: bool = config["join_train"]
         self.temperature = config["temperature"]
 
+        num_labels = len(np.load(config["c2ind"], allow_pickle=True).item())
+        pos_weight = load_pos_weight(config["pos_weight"], device=device, num_labels=num_labels)
+        self.register_buffer("pos_weight", pos_weight)
+
         self._mlb = MainBranch(config)
-        self.s_bce = nn.BCEWithLogitsLoss()
 
         self._clb = ClassifierBranch(config)
         self.bhl = BHLLoss(config)
 
         self._flb = FeatureBranch(config)
-        self.f_bce = nn.BCEWithLogitsLoss()
+
+        s_dim = self._mlb.hidden_dim()
+        f_dim = self._flb.hidden_dim()
+
+        self.s2f = nn.Sequential(
+            nn.Linear(s_dim, f_dim, bias=True),
+            nn.LayerNorm(f_dim),
+        )
+
 
         if not self._join_train:
             self._clb.load()
             self._flb.load()
 
-    def forward(self, x, y, adj_param):
+    def forward(self, x, y, adj):
         (h_f, logits_f) = self._flb(x)
         logits_c = self._clb(x)
         h_s, logits_s = self._mlb(x)
 
-        ll = logits_distillation_loss(logits_s, logits_c, self.temperature)  # []
-        fl = feat_distillation_loss(torch.cat([h_s, h_s], dim=-1), h_f)  # []
-        distillation_loss = adj_param * fl + (1 - adj_param) * ll
-        bce_loss = self.s_bce(logits_s, y)  # []
+        ll = logits_distillation_loss(logits_s, logits_c.detach(), self.temperature)
 
-        total_loss = distillation_loss + bce_loss
+        h_s_proj = self.s2f(h_s)
+        fl = feat_distillation_loss(h_s_proj, h_f.detach())
+        distillation_loss = adj * fl + (1 - adj) * ll
+
+        bce_s = F.binary_cross_entropy_with_logits(
+            logits_s, y, pos_weight=self.pos_weight, reduction="mean"
+        )
+
+        total_loss = distillation_loss + bce_s
 
         if self._join_train:
-            total_loss += self.f_bce(logits_f, y)
-            total_loss += self.bhl(logits_c, y)
+            bce_f = F.binary_cross_entropy_with_logits(
+                logits_f, y, pos_weight=self.pos_weight, reduction="mean"
+            )
+            bhl = self.bhl(logits_c, y)
+            total_loss += bhl + bce_f
 
         return logits_s, total_loss

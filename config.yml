@@ -1,20 +1,23 @@
 lr: 0.00005
-batch_size: 64
+batch_size: 32
 random_seed: 914
 w2v_size: 100
 metric: "f1_micro"
 enc_dim: 100
 label_dim: 100
-epochs: 900
+epochs: 120
 join_train: 1
 droprate: 0.4
-cls_threshold: 0.5
+cls_threshold: 0.28
 num_cls: 8921 # rewrite when load data
-mode: 'debug' # release
+mode: 'release' # release
 max_words: 2500
-val_interval: 50
+val_interval: 2
 log_interval: 10
-lambda: 0.2
+lambda: 0.1
+gamma: 0.05
+beta: 0.02
+hire_margin: 0.03
 temperature: 2
 
 # change when data changed: mimic full
@@ -25,6 +28,7 @@ comatrix: "./processed_data/comatrix.npy"
 hier_level_idx: "./processed_data/hier_level_idx.npy"
 embedding: "./processed_data/processed_full.embed"
 train_data: "./processed_data/train_ov_full.csv" # test | dev
+pos_weight: "./processed_data/pos_weight.npy"
 
 persistent:
   feat: "./trained_models/feat.pth"
@@ -33,7 +37,7 @@ persistent:
   dbkd: "./trained_models/dbkd.pth"
 
 doc_enc:
-  dense_layers: 5
+  dense_layers: 8
   kernel_size: 3
 
 label_enc:

@@ -20,8 +20,8 @@ def all_metrics(yhat, y, k=8, yhat_raw=None, calc_auc=True):
         dict holding relevant metrics
     """
     names = ["acc", "prec", "rec", "f1"]
-    yhat = yhat.detach().numpy()
-    y = y.detach().numpy()
+    yhat = yhat.detach().cpu().numpy()
+    y = y.detach().cpu().numpy()
     # macro
     macro = all_macro(yhat, y)
 

@@ -26,20 +26,13 @@ class MutalInteraction(nn.Module):
         self.w_l = nn.Linear(label_dim, 1)
 
     def forward(self, H, E):
-        E_transformed = F.gelu(self.w_l(E))
-        H_transformed = F.gelu(self.w_t(H))
+        H_t = F.gelu(self.w_t(H))
+        E_t = F.gelu(self.w_l(E))
 
-        E_transformed = E_transformed.unsqueeze(0).unsqueeze(2)
-        H_transformed = H_transformed.unsqueeze(1)
-
-        beta_l2d = H_transformed * E_transformed
-        beta_l2d = torch.sum(beta_l2d, dim=-1)
-
-        weight = torch.softmax(beta_l2d, dim=-1).unsqueeze(-1)
-
-        H_tilde = H.unsqueeze(1)
-        H_tilde = torch.sum(weight * H_tilde, dim=2)
-
+        beta = torch.einsum('bnr,lr->bnl', H_t, E_t)
+        beta = beta - beta.max(dim=1, keepdim=True).values
+        attn = torch.softmax(beta, dim=1)
+        H_tilde = torch.einsum('bnl,bnd->bld', attn, H)
         h_tilde, _ = torch.max(H_tilde, dim=1)
 
         h_avg = torch.mean(H, dim=1)

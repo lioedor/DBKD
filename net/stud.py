@@ -12,15 +12,15 @@ class MainBranch(nn.Module):
 
         self.doc = DocEncoder(config)
         self.man = SimpleInteraction(config)
-
-        num_feats = config["enc_dim"]
+        self._hidden_dim = config["enc_dim"]
         c2idx = np.load(config["c2ind"], allow_pickle=True).item()
-        num_cls = len(c2idx)
-        self.cls = Classifier(num_feats, num_cls, config["droprate"])
+        self.cls = Classifier(self._hidden_dim, len(c2idx), config["droprate"])
+
+    def hidden_dim(self) -> int:
+        return self._hidden_dim
 
     def forward(self, x):
         H = self.doc(x)
         h = self.man(H)
-        # H = torch.flatten(H, start_dim=1)
         p = self.cls(h)
         return h, p

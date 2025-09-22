@@ -18,12 +18,14 @@ class FeatureBranch(nn.Module):
         self.man = MutalInteraction(config)
 
         c2idx = np.load(config["c2ind"], allow_pickle=True).item()
-        num_cls = len(c2idx)
-        num_feats = config["enc_dim"] + config["label_dim"]
-        self.cls = Classifier(num_feats, num_cls, config["droprate"])
+        self._hidden_dim = config["enc_dim"] + config["label_dim"]
+        self.cls = Classifier(self._hidden_dim, len(c2idx), config["droprate"])
 
         self.persistent_path = config["persistent"]["feat"]
-
+    
+    def hidden_dim(self) -> int:
+        return self._hidden_dim
+    
     def forward(self, x):
         H = self.doc(x)
         E = self.le(x)

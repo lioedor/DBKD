@@ -1,5 +1,6 @@
 import os
 from os.path import expanduser
+from typing import Dict, Optional, Tuple
 import requests
 import shutil
 import torch
@@ -8,6 +9,8 @@ import numpy as np
 import itertools
 from tqdm import tqdm
 from collections import defaultdict, Counter
+import tempfile, os
+from pathlib import Path
 
 SAVE_DIR = "./processed_data"
 BIO_BERT_LINK = "https://www.dropbox.com/s/dc2ki2d4jv8isrb/biobert_weights.zip?dl=1"
@@ -328,7 +331,9 @@ def build_c2p(dicts):
 
 
 def rewrite_train_data_with_hierarchy(train_path, hierarchy, c2desc):
-    for split in ["train", "dev", "test"]:
+    C = DictCounter("./processed_data/label_counter.npy")
+    # for split in ["train", "dev", "test"]:
+    for split in ["train"]:
         file_path = train_path.replace("train", split)
         data = []
         with open(file_path, "r") as f:
@@ -348,6 +353,9 @@ def rewrite_train_data_with_hierarchy(train_path, hierarchy, c2desc):
                         # print("add code {}'s parent node {}".format(code, parent_node))
                 new_row[3] = ";".join(new_codes)
                 data.append(new_row)
+                for code in new_codes:
+                    C.add(code)
+        C.save()
         file_path = train_path.replace("train", split + "_ov")
         with open(file_path, "w") as f:
             f.write(
@@ -357,6 +365,42 @@ def rewrite_train_data_with_hierarchy(train_path, hierarchy, c2desc):
                 f.write(",".join(row) + "\n")
         print("write hierarchy-processed file to ", file_path)
 
+
+class DictCounter:
+    def __init__(self, path):
+        self.path = Path(path)
+        self.counter = self._load_or_init()
+
+    def update(self, iterable):
+        self.counter.update(iterable)
+
+    def add(self, key, count=1):
+        self.counter[key] += count
+
+    def save(self):
+        arr = np.array(dict(self.counter), dtype=object)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=str(self.path.parent), delete=False
+        ) as tmp:
+            np.save(tmp, arr, allow_pickle=True)
+            tmp_name = tmp.name
+        os.replace(tmp_name, self.path)
+
+    def _load_or_init(self):
+        if self.path.exists():
+            try:
+                arr = np.load(self.path, allow_pickle=True).item()
+                return Counter(arr)
+            except Exception:
+                return Counter()
+        return Counter()
+
+    def __getitem__(self, key):
+        return self.counter[key]
+
+    def __repr__(self):
+        return f"DictCounter({dict(self.counter)})"
 
 def build_hm_idx_map(c2ind, hierarchy, hier_codes):
     hierarchy_index_map = {}
@@ -407,30 +451,70 @@ def build_label_co_matrix(data_path, c2idx):
     return matrix
 
 
+def save_pos_weight_npy(
+    train_data_path,
+    id2idx_path,
+    out_path: str,
+    clip: Tuple[float, float] = (1.0, 6.0),  # 权重裁剪区间
+    add_k: float = 1.0,
+):
+    counts = Counter()
+    total = 0
+    with open(train_data_path, "r") as f:
+        lr = csv.reader(f)
+        next(lr) # header
+        for row in lr:
+            total += 1
+            for l in row[3].split(";"):
+                counts[l] += 1
+
+    c2idx = np.load(id2idx_path, allow_pickle=True).item()
+    C = max(c2idx.values()) + 1
+    pos = np.zeros(C, dtype=np.float64)
+    for k, idx in c2idx.items():
+        pos[idx] = counts.get(k, 0)
+
+    pos = pos + float(add_k)
+    eps = 1e-12
+    beta = 1.0 - 1.0 / float(total)   # ≈(N-1)/N
+    beta = float(np.clip(beta, 0.9, 0.99999))
+    E = (1.0 - np.power(beta, pos)) / (1.0 - beta)
+    w = 1.0 / np.clip(E, eps, None)
+    med = np.median(w)
+    if med > 0:
+        w = w / med
+
+    w = np.clip(w, clip[0], clip[1]).astype(np.float32)
+    np.save(out_path, w, allow_pickle=True)
+
 if __name__ == "__main__":
-    c2desc = load_desc_map(os.path.join(SAVE_DIR, "description_words.vocab"))
+    pass
+    # c2desc = load_desc_map(os.path.join(SAVE_DIR, "description_words.vocab"))
 
     # code_desc_biobert(dicts)
     # build_c2p(dicts)
-    label_hm, hier_codes = build_label_hierarchy(c2desc)
-    ori_data_path = os.path.join(SAVE_DIR, "train_full.csv")  # change this
-    rewrite_train_data_with_hierarchy(ori_data_path, label_hm, c2desc)
+    # label_hm, hier_codes = build_label_hierarchy(c2desc)
+    # ori_data_path = os.path.join(SAVE_DIR, "train_full.csv")  # change this
+    # rewrite_train_data_with_hierarchy(ori_data_path, label_hm, c2desc)
 
-    processed_data_path = os.path.join(SAVE_DIR, "train_ov_full.csv")
-    c2ind, ind2c = buildc2idx(processed_data_path)
-    np.save(os.path.join(SAVE_DIR, "c2ind.npy"), c2ind)
-    np.save(os.path.join(SAVE_DIR, "ind2c.npy"), ind2c)
-    dicts = {}
-    dicts["c2desc"] = c2desc
-    dicts["c2ind"] = c2ind
-    dicts["ind2c"] = ind2c
-    # code_desc_biobert(dicts)
-    hierarchy_index_map, hier_level_idx = build_hm_idx_map(c2ind, label_hm, hier_codes)
-    np.save(os.path.join(SAVE_DIR, "hmidx.npy"), hierarchy_index_map)
-    np.save(
-        os.path.join(SAVE_DIR, "hier_level_idx.npy"),
-        np.array(hier_level_idx, dtype=object),
-    )
+    # processed_data_path = os.path.join(SAVE_DIR, "train_ov_full.csv")
+    # c2ind, ind2c = buildc2idx(processed_data_path)
+    # np.save(os.path.join(SAVE_DIR, "c2ind.npy"), c2ind)
+    # np.save(os.path.join(SAVE_DIR, "ind2c.npy"), ind2c)
+    # dicts = {}
+    # dicts["c2desc"] = c2desc
+    # dicts["c2ind"] = c2ind
+    # dicts["ind2c"] = ind2c
+    # # code_desc_biobert(dicts)
+    # hierarchy_index_map, hier_level_idx = build_hm_idx_map(c2ind, label_hm, hier_codes)
+    # np.save(os.path.join(SAVE_DIR, "hmidx.npy"), hierarchy_index_map)
+    # np.save(
+    #     os.path.join(SAVE_DIR, "hier_level_idx.npy"),
+    #     np.array(hier_level_idx, dtype=object),
+    # )
 
-    co_matrix = build_label_co_matrix(processed_data_path, c2ind)
-    np.save(os.path.join(SAVE_DIR, "comatrix.npy"), co_matrix)
+    # co_matrix = build_label_co_matrix(processed_data_path, c2ind)
+    # np.save(os.path.join(SAVE_DIR, "comatrix.npy"), co_matrix)
+
+    # save_pos_weight_npy(os.path.join(SAVE_DIR, "train_ov_full.csv"), os.path.join(SAVE_DIR, "c2ind.npy"),
+    #                     os.path.join(SAVE_DIR, "pos_weight.npy"))

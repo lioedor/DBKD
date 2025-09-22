@@ -1,6 +1,7 @@
 import torch
 import datetime
 import yaml
+import time
 import mimic_dataset
 
 
@@ -12,6 +13,14 @@ from net.dbkd import DBKBFramework
 from evaluation import all_metrics, print_metrics
 from log import logger
 
+def timer(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"{func.__name__} ran in: {end_time - start_time:.6f} seconds")
+        return result
+    return wrapper
 
 def logitsToPred(logits, threshold):
     probabilities = torch.sigmoid(logits)
@@ -26,9 +35,9 @@ class Trainer:
         optimizer,
         criterion,
         metric,
-        decision=0.5,
-        device="cpu",
-        save_path="best.pth",
+        decision,
+        device,
+        save_path,
     ):
         self.model = model
         self.optimizer = optimizer
@@ -90,6 +99,8 @@ class Trainer:
             filename_suffix="_train_curve",
         )
 
+        continue_low_metric = 0
+
         for epoch in range(epochs):
             total_loss = 0
             loss_mean = 0.0
@@ -105,7 +116,7 @@ class Trainer:
                 total += y.size(0)
                 total_loss += loss
                 train_curve.append(loss)
-                loss_mean + loss
+                loss_mean += loss
 
                 if (iter_count) % log_interval == 0:
                     loss_mean = loss_mean / log_interval
@@ -130,14 +141,12 @@ class Trainer:
                     writer.add_histogram(name + "_data", param, epoch)
 
             # self.optimizer.step()  # 每个 epoch 更新学习率
-            if (iter_count % val_interval) == 0:
+            if (epoch % val_interval) == 0:
                 val_loss, metric = self.validation(val_loader)
                 logger.info(
-                    "Val:Epoch[{:0>3}/{:0>3}] Iteration[{:0>3}/{:0>3}] Loss: {:.4f} Metric:{:.2%}".format(
+                    "Val:Epoch[{:0>3}/{:0>3}] Loss: {:.4f} Metric:{:.2%}".format(
                         epoch,
                         epochs,
-                        iter_count,
-                        len(val_loader),
                         val_loss,
                         metric,
                     )
@@ -146,20 +155,15 @@ class Trainer:
                     best_val_metric = metric
                     logger.info("Val:Best-Metric: {:.2%}".format(best_val_metric))
                     torch.save(self.model.state_dict(), self.save_path)
-
-        # train_x = range(len(train_curve))
-        # train_y = train_curve
-
-        # plt.plot(train_x, train_y, label="Train")
-
-        # plt.legend(loc="upper right")
-        # plt.ylabel("loss value")
-        # plt.xlabel("Iteration")
-        # plt.show()
+                else:
+                    continue_low_metric += 1
+                    if continue_low_metric > 20:
+                        logger.info("early stopping")
+                        return
 
 
 class Evaluator:
-    def __init__(self, model, params_path, decision=0.5, device="cpu"):
+    def __init__(self, model, params_path, decision, device):
         self.model = model
         self.model.load_state_dict(torch.load(params_path))
         self.model.eval()
@@ -168,7 +172,8 @@ class Evaluator:
 
     def _calc_logits(self, x, y):
         return self.model(x)
-
+    
+    @timer
     def eval(self, test_loader):
         total = len(test_loader)
         metrics = {}
@@ -189,9 +194,9 @@ class DBKDTrainer(Trainer):
         optimizer,
         criterion,
         metric,
-        decision=0.5,
-        device="cpu",
-        save_path="best.pth",
+        decision,
+        device,
+        save_path,
     ):
         super().__init__(
             model, optimizer, criterion, metric, decision, device, save_path
@@ -209,9 +214,9 @@ class FBTrainer(Trainer):
         optimizer,
         criterion,
         metric,
-        decision=0.5,
-        device="cpu",
-        save_path="best.pth",
+        decision,
+        device,
+        save_path,
     ):
         super().__init__(
             model, optimizer, criterion, metric, decision, device, save_path
@@ -224,7 +229,7 @@ class FBTrainer(Trainer):
 
 
 class DBKDEvaluator(Evaluator):
-    def __init__(self, model, params_path, decision=0.5, device="cpu"):
+    def __init__(self, model, params_path, decision, device):
         super().__init__(model, params_path, decision, device)
 
     def _calc_logits(self, x, y):
@@ -233,7 +238,7 @@ class DBKDEvaluator(Evaluator):
 
 
 class FBEvaluator(Evaluator):
-    def __init__(self, model, params_path, decision=0.5, device="cpu"):
+    def __init__(self, model, params_path, decision, device):
         super().__init__(model, params_path, decision, device)
 
     def _calc_logits(self, x, y):
@@ -247,22 +252,27 @@ def train_dbkd():
         config = yaml.safe_load(file)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config["device"] = device
-    # Data
-    train_data = mimic_dataset.MimicData(config=config, stage="dev")
-    train_loader = DataLoader(
-        dataset=train_data, batch_size=config["batch_size"], shuffle=True
-    )
-    val_data = mimic_dataset.MimicData(config=config, stage="dev")
-    val_loader = DataLoader(
-        dataset=val_data, batch_size=config["batch_size"], shuffle=True
-    )
     # Model
     model = DBKBFramework(config)
+    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
     criterion = 0  # unused
     metric = "f1_micro"
     decision = config["cls_threshold"]
     save_path = config["persistent"]["dbkd"]
+
+    # Data
+    train_data = mimic_dataset.MimicData(config=config, stage="train")
+    train_loader = DataLoader(
+        dataset=train_data, batch_size=config["batch_size"], shuffle=True
+    )
+    logger.info("train data size: {}, iter: {}".format(len(train_data),  len(train_loader)))
+    val_data = mimic_dataset.MimicData(config=config, stage="dev")
+    val_loader = DataLoader(
+        dataset=val_data, batch_size=config["batch_size"], shuffle=True
+    )
+
+    logger.info("val data size: {}, iter: {}".format(len(val_data),  len(val_loader)))
 
     trainer = DBKDTrainer(
         model, optimizer, criterion, metric, decision, device, save_path
@@ -287,8 +297,10 @@ def eval_dbkd():
     test_loader = DataLoader(
         dataset=test_data, batch_size=config["batch_size"], shuffle=False
     )
+    logger.info("test data size: {}, iter: {}".format(len(test_data),  len(test_loader)))
     # Model
     model = DBKBFramework(config)
+    model = model.to(device)
     decision = config["cls_threshold"]
 
     save_path = config["persistent"]["dbkd"]
@@ -304,22 +316,25 @@ def train_feat():
         config = yaml.safe_load(file)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config["device"] = device
-    # Data
-    train_data = mimic_dataset.MimicData(config=config, stage="dev")
-    train_loader = DataLoader(
-        dataset=train_data, batch_size=config["batch_size"], shuffle=True
-    )
-    val_data = mimic_dataset.MimicData(config=config, stage="dev")
-    val_loader = DataLoader(
-        dataset=val_data, batch_size=config["batch_size"], shuffle=True
-    )
     # Model
     model = FeatureBranch(config)
+    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
     criterion = torch.nn.BCEWithLogitsLoss()  # unused
     metric = "f1_micro"
     decision = config["cls_threshold"]
     save_path = config["persistent"]["feat"]
+
+    # Data
+    train_data = mimic_dataset.MimicData(config=config, stage="train")
+    train_loader = DataLoader(
+        dataset=train_data, batch_size=config["batch_size"], shuffle=True
+    )
+    
+    val_data = mimic_dataset.MimicData(config=config, stage="dev")
+    val_loader = DataLoader(
+        dataset=val_data, batch_size=config["batch_size"], shuffle=True
+    )
 
     trainer = FBTrainer(
         model, optimizer, criterion, metric, decision, device, save_path
@@ -348,6 +363,7 @@ def eval_feat():
     )
     # Model
     model = FeatureBranch(config)
+    model = model.to(device)
     decision = config["cls_threshold"]
 
     save_path = config["persistent"]["feat"]
@@ -364,8 +380,17 @@ def train_clas():
         config = yaml.safe_load(file)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config["device"] = device
+    # Model
+    model = ClassifierBranch(config)
+    model = model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
+    criterion = BHLLoss(config)
+    metric = "f1_micro"
+    decision = config["cls_threshold"]
+    save_path = config["persistent"]["clas"]
+
     # Data
-    train_data = mimic_dataset.MimicData(config=config, stage="dev")
+    train_data = mimic_dataset.MimicData(config=config, stage="train")
     train_loader = DataLoader(
         dataset=train_data, batch_size=config["batch_size"], shuffle=True
     )
@@ -373,13 +398,6 @@ def train_clas():
     val_loader = DataLoader(
         dataset=val_data, batch_size=config["batch_size"], shuffle=True
     )
-    # Model
-    model = ClassifierBranch(config)
-    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
-    criterion = BHLLoss(config)
-    metric = "f1_micro"
-    decision = config["cls_threshold"]
-    save_path = config["persistent"]["clas"]
 
     trainer = Trainer(model, optimizer, criterion, metric, decision, device, save_path)
     trainer.fit(
@@ -401,11 +419,13 @@ def eval_clas():
     config["device"] = device
     # Data
     test_data = mimic_dataset.MimicData(config=config, stage="test")
+    
     test_loader = DataLoader(
         dataset=test_data, batch_size=config["batch_size"], shuffle=False
     )
     # Model
     model = ClassifierBranch(config)
+    model = model.to(device)
     decision = config["cls_threshold"]
 
     save_path = config["persistent"]["clas"]
@@ -414,5 +434,9 @@ def eval_clas():
 
 
 if __name__ == "__main__":
-    train_dbkd()
-    eval_dbkd()
+    # train_dbkd()
+    # train_feat()
+    train_clas()
+    # eval_dbkd()
+    # eval_feat()
+    # eval_clas()

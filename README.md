@@ -1,7 +1,7 @@
 # DBKD
 ## Dataset
 * [MIMIC-III](https://mimic.mit.edu/): The database comprises detailed clinical information regarding >60 000 stays in ICUs at the Beth Israel Deaconess Medical Center in Boston between 2001 - 2012. MIMIC Code Repository can be obtained from: https://github.com/MIT-LCP/mimic-code.
-* BHF dataset: 4,899 Chinese EMRs from Beijing Friendship Hospital between January 2020 and January 2022. The BHF dataset will be made available from the corresponding author by request.
+* BFH dataset: 4,899 Chinese EMRs from ***** Hospital between January 2020 and January 2022. The BFH dataset will be made available from the corresponding author by request.
 
 ## Requirement
 * Python
@@ -28,6 +28,10 @@
 * [MultiResCNN](https://github.com/foxlf823/Multi-Filter-Residual-Convolutional-Neural-Network)
 * [MSATT-KG](https://dl.acm.org/doi/abs/10.1145/3357384.3357897)
 * [JAN](https://ieeexplore.ieee.org/document/9822203)
+
+## Label knowledge acquirement
+We crawled the ICD description and hierarchy information from [ICD9 website](http://www.icd9data.com/). After adding the parent label, the number of labels in MIMIC-III-full for training, development, and testing are 10,051, 3,928, 5,111, respectively.
+
 
 ## Data usage
 Put the files of MIMIC III into the 'data' dir as below:
@@ -89,4 +93,4 @@ For any issues/questions regarding the paper or reproducing the results, please 
 
 ##: ###
 
-Department of Biomedical Engineering, Beihang University, 37 Xueyuan Road, Beijing, 100853
+Department of *****, ****** University

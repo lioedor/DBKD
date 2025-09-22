@@ -79,6 +79,7 @@ class BHLLoss(nn.Module):
     def forward(self, logits, y):
         p = torch.sigmoid(logits)
         p_parent = p.index_select(1, self.parent_idx)
+        y_parent = y.index_select(1, self.parent_idx)
 
         bce_elem = F.binary_cross_entropy_with_logits(
                 logits, y, reduction='none', pos_weight=self.pos_weight
@@ -87,9 +88,9 @@ class BHLLoss(nn.Module):
         diff_pos = (p > self.threshold) & (p_parent < self.threshold) & not_root
         w_diff = 1.0 + self.gamma * diff_pos.float()
 
-        hier_mask = (p_parent > self.threshold) & (p < self.threshold) & not_root
-        hier_violation = F.relu(p_parent - (p + self.hire_margin)) * hier_mask.float()
-        w_diff += self.beta * hier_violation
+        hier_mask = ((p_parent > self.threshold) | y_parent.bool() | y.bool()) & not_root
+        hier_mask = hier_mask or y or y_parent
+        w_diff += self.beta * hier_mask.float()
 
         smooth = torch.einsum('bc,cd,bd->b', p, self.L, p)
         smooth = torch.nan_to_num(smooth, nan=0.0, posinf=1e4, neginf=0.0)
